@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>猫ゲーム</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #5c9e35;
+      background-image:
+        repeating-linear-gradient(
+          90deg,
+          transparent        0px,
+          transparent        22px,
+          rgba(0,30,0,0.10)  22px,
+          rgba(0,30,0,0.10)  44px
+        ),
+        repeating-linear-gradient(
+          0deg,
+          transparent       0px,
+          transparent       3px,
+          rgba(0,50,0,0.05) 3px,
+          rgba(0,50,0,0.05) 4px
+        );
+    }
+    .decoration {
+      position: absolute;
+      pointer-events: none;
+      user-select: none;
+      z-index: 1;
+    }
+    .cat-wrap {
+      position: absolute;
+      pointer-events: none;
+      user-select: none;
+      z-index: 2;
+    }
+    .food {
+      position: absolute;
+      font-size: 40px;
+      pointer-events: none;
+      user-select: none;
+      z-index: 2;
+    }
+    #controls {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(255,255,255,0.75);
+      padding: 8px 16px;
+      border-radius: 24px;
+      font-family: sans-serif;
+      font-size: 18px;
+    }
+    #controls button {
+      font-size: 22px;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 50%;
+      background: #c9855e;
+      color: white;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #controls button:hover { background: #a5603c; }
+    #cat-count {
+      min-width: 24px;
+      text-align: center;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="btn-remove">−</button>
+    <span>🐱 × <span id="cat-count">1</span></span>
+    <button id="btn-add">＋</button>
+  </div>
+
+  <script>
+    /* ─── 猫の動きロジック ─────────────────────────────── */
+    const catCountEl = document.getElementById('cat-count');
+    const cats  = [];
+    const foods = [];
+
+    const SVG_W       = 110;
+    const SVG_H       = 85;
+    const BASE_SIZE   = 85;
+    const MAX_SIZE    = BASE_SIZE * 5;
+    const DETECT_R    = 220;
+    const EAT_R       = 44;
+    const GROW_AMOUNT = 20;
+
+    const SCHEMES = [
+      { body:'#9a9a9a', belly:'#d8d8d8', earIn:'#eebbc0', eye:'#70a830', stripe:'#6a6a6a' },
+      { body:'#e07830', belly:'#f8d090', earIn:'#eebbc0', eye:'#c88010', stripe:'#b05820' },
+      { body:'#585868', belly:'#9898a8', earIn:'#c8a0a8', eye:'#d0b000', stripe:null      },
+      { body:'#c8b898', belly:'#eee8dc', earIn:'#eebbc0', eye:'#4488c8', stripe:null      },
+      { body:'#c8a228', belly:'#f0d870', earIn:'#eebbc0', eye:'#b07010', stripe:'#906018' },
+    ];
+    let schemeIdx = 0;
+
+    function catSVG(s) {
+      const dur = (0.32 + Math.random() * 0.10).toFixed(2);
+      const stripes = s.stripe ? `
+        <path d="M42,49 Q49,45 56,49" stroke="${s.stripe}" stroke-width="2.5" fill="none" opacity="0.45"/>
+        <path d="M38,56 Q46,52 54,56" stroke="${s.stripe}" stroke-width="2.5" fill="none" opacity="0.45"/>
+        <path d="M40,63 Q47,59 55,63" stroke="${s.stripe}" stroke-width="2.5" fill="none" opacity="0.40"/>
+        <path d="M78,30 Q82,27 87,30" stroke="${s.stripe}" stroke-width="2"   fill="none" opacity="0.40"/>
+      ` : '';
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SVG_W} ${SVG_H}">
+        <g><animateTransform attributeName="transform" type="rotate"
+            values="-8,30,56; 8,30,56; -8,30,56" dur="1s" repeatCount="indefinite"/>
+          <path d="M30,56 C16,49 6,37 15,24 C19,17 27,18 28,26"
+            stroke="${s.body}" stroke-width="7" fill="none" stroke-linecap="round"/>
+        </g>
+        <ellipse cx="56" cy="57" rx="27" ry="17" fill="${s.body}"/>
+        <ellipse cx="58" cy="61" rx="15" ry="10" fill="${s.belly}"/>
+        ${stripes}
+        <g><animateTransform attributeName="transform" type="rotate"
+            values="-22,38,63; 22,38,63; -22,38,63" dur="${dur}s" repeatCount="indefinite"/>
+          <ellipse cx="38" cy="73" rx="5" ry="10" fill="${s.body}"/>
+          <ellipse cx="38" cy="83" rx="5.5" ry="3" fill="${s.belly}"/>
+        </g>
+        <g><animateTransform attributeName="transform" type="rotate"
+            values="22,46,63; -22,46,63; 22,46,63" dur="${dur}s" repeatCount="indefinite"/>
+          <ellipse cx="46" cy="73" rx="5" ry="10" fill="${s.body}"/>
+          <ellipse cx="46" cy="83" rx="5.5" ry="3" fill="${s.belly}"/>
+        </g>
+        <circle cx="82" cy="41" r="16" fill="${s.body}"/>
+        <polygon points="72,30 77,17 84,28" fill="${s.body}"/>
+        <polygon points="83,27 89,16 95,29" fill="${s.body}"/>
+        <polygon points="73,29 77,19 83,27" fill="${s.earIn}"/>
+        <polygon points="84,27 89,18 94,28" fill="${s.earIn}"/>
+        <ellipse cx="82" cy="46" rx="11" ry="9" fill="${s.belly}"/>
+        <ellipse cx="77" cy="39" rx="3.5" ry="4"  fill="${s.eye}"/>
+        <ellipse cx="77" cy="39" rx="2"   ry="3"  fill="#1a1a1a"/>
+        <circle  cx="76" cy="38" r="1.1"           fill="white"/>
+        <ellipse cx="87" cy="39" rx="3.5" ry="4"  fill="${s.eye}"/>
+        <ellipse cx="87" cy="39" rx="2"   ry="3"  fill="#1a1a1a"/>
+        <circle  cx="86" cy="38" r="1.1"           fill="white"/>
+        <polygon points="82,46 80,49 84,49" fill="#e07080"/>
+        <path d="M80,49 Q82,52 84,49" stroke="#c05060" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <line x1="83" y1="47" x2="103" y2="44" stroke="#ddd" stroke-width="1.3" opacity="0.9"/>
+        <line x1="83" y1="49" x2="103" y2="49" stroke="#ddd" stroke-width="1.3" opacity="0.9"/>
+        <line x1="81" y1="47" x2="62"  y2="44" stroke="#ddd" stroke-width="1.3" opacity="0.9"/>
+        <line x1="81" y1="49" x2="62"  y2="49" stroke="#ddd" stroke-width="1.3" opacity="0.9"/>
+        <g><animateTransform attributeName="transform" type="rotate"
+            values="22,68,63; -22,68,63; 22,68,63" dur="${dur}s" repeatCount="indefinite"/>
+          <ellipse cx="68" cy="73" rx="5" ry="10" fill="${s.body}"/>
+          <ellipse cx="68" cy="83" rx="5.5" ry="3" fill="${s.belly}"/>
+        </g>
+        <g><animateTransform attributeName="transform" type="rotate"
+            values="-22,76,63; 22,76,63; -22,76,63" dur="${dur}s" repeatCount="indefinite"/>
+          <ellipse cx="76" cy="73" rx="5" ry="10" fill="${s.body}"/>
+          <ellipse cx="76" cy="83" rx="5.5" ry="3" fill="${s.belly}"/>
+        </g>
+      </svg>`;
+    }
+
+    function createCat() {
+      const scheme = SCHEMES[schemeIdx % SCHEMES.length];
+      schemeIdx++;
+      const wrap = document.createElement('div');
+      wrap.className = 'cat-wrap';
+      wrap.innerHTML = catSVG(scheme);
+      document.body.appendChild(wrap);
+      cats.push({
+        wrap,
+        svgEl: wrap.querySelector('svg'),
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        speed: 1.8 + Math.random() * 1.4,
+        size: BASE_SIZE,
+        targetSize: BASE_SIZE,
+        wanderX: Math.random() * window.innerWidth,
+        wanderY: Math.random() * window.innerHeight,
+        facingRight: true,
+      });
+      catCountEl.textContent = cats.length;
+    }
+
+    function removeCat() {
+      if (cats.length <= 1) return;
+      cats.pop().wrap.remove();
+      catCountEl.textContent = cats.length;
+    }
+
+    function spawnFood(x, y) {
+      const el = document.createElement('div');
+      el.className = 'food';
+      el.textContent = '🐟';
+      el.style.left = x - 20 + 'px';
+      el.style.top  = y - 20 + 'px';
+      document.body.appendChild(el);
+      foods.push({ el, x, y });
+    }
+
+    document.getElementById('btn-add').addEventListener('click', createCat);
+    document.getElementById('btn-remove').addEventListener('click', removeCat);
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('#controls')) return;
+      spawnFood(e.clientX, e.clientY);
+    });
+
+    function loop() {
+      for (const cat of cats) {
+        const sizeRatio = cat.size / BASE_SIZE;
+        const detectR = DETECT_R * Math.sqrt(sizeRatio);
+        const eatR    = EAT_R   * sizeRatio;
+
+        let nearestFood = null;
+        let nearestDist = detectR;
+        for (const food of foods) {
+          const d = Math.hypot(food.x - cat.x, food.y - cat.y);
+          if (d < nearestDist) { nearestDist = d; nearestFood = food; }
+        }
+
+        let tx, ty;
+        if (nearestFood) {
+          tx = nearestFood.x;
+          ty = nearestFood.y;
+          if (nearestDist < eatR) {
+            nearestFood.el.remove();
+            foods.splice(foods.indexOf(nearestFood), 1);
+            cat.targetSize = Math.min(MAX_SIZE, cat.targetSize + GROW_AMOUNT);
+          }
+        } else {
+          if (Math.hypot(cat.wanderX - cat.x, cat.wanderY - cat.y) < 30) {
+            cat.wanderX = 60 + Math.random() * (window.innerWidth  - 120);
+            cat.wanderY = 60 + Math.random() * (window.innerHeight - 120);
+          }
+          tx = cat.wanderX;
+          ty = cat.wanderY;
+        }
+
+        const dx = tx - cat.x;
+        const dy = ty - cat.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 1) {
+          const spd = nearestFood ? cat.speed * 1.6 : cat.speed;
+          cat.x += (dx / dist) * spd;
+          cat.y += (dy / dist) * spd;
+          if (Math.abs(dx) > 2) cat.facingRight = dx > 0;
+        }
+
+        if (cat.targetSize > BASE_SIZE) {
+          cat.targetSize = Math.max(BASE_SIZE, cat.targetSize - 0.02);
+        }
+        cat.size += (cat.targetSize - cat.size) * 0.04;
+
+        const svgH = cat.size;
+        const svgW = cat.size * SVG_W / SVG_H;
+        cat.svgEl.style.height    = svgH + 'px';
+        cat.svgEl.style.width     = svgW + 'px';
+        cat.svgEl.style.transform = cat.facingRight ? '' : 'scaleX(-1)';
+        cat.wrap.style.left = (cat.x - svgW / 2) + 'px';
+        cat.wrap.style.top  = (cat.y - svgH / 2) + 'px';
+      }
+      requestAnimationFrame(loop);
+    }
+
+    /* ─── 家具・道具のSVG ─────────────────────────────── */
+
+    // キャットタワー（大）
+    function svgTowerLarge() {
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 240" width="110" height="240">
+        <ellipse cx="55" cy="237" rx="50" ry="5" fill="rgba(0,40,0,0.3)"/>
+        <!-- 土台 -->
+        <rect x="4" y="216" width="102" height="20" rx="5" fill="#7a5428"/>
+        <rect x="4" y="216" width="102" height="8"  rx="4" fill="#4a9030"/>
+        <!-- ポール（麻縄） -->
+        <rect x="49" y="14" width="12" height="204" rx="4" fill="#d4b068"/>
+        <path d="M49,20 L61,20 M49,30 L61,30 M49,40 L61,40 M49,50 L61,50
+                 M49,60 L61,60 M49,70 L61,70 M49,80 L61,80 M49,90 L61,90
+                 M49,100 L61,100 M49,110 L61,110 M49,120 L61,120 M49,130 L61,130
+                 M49,140 L61,140 M49,150 L61,150 M49,160 L61,160 M49,170 L61,170
+                 M49,180 L61,180 M49,190 L61,190 M49,200 L61,200 M49,210 L61,210"
+              stroke="#b89050" stroke-width="1.4"/>
+        <!-- 最下段（緑カーペット） -->
+        <rect x="4" y="182" width="102" height="14" rx="7" fill="#7a5428"/>
+        <rect x="4" y="182" width="102" height="6"  rx="5" fill="#4a9030"/>
+        <!-- 中段（青カーペット） -->
+        <rect x="16" y="120" width="78" height="14" rx="7" fill="#7a5428"/>
+        <rect x="16" y="120" width="78" height="6"  rx="5" fill="#4870c8"/>
+        <!-- 吊りおもちゃ（中段から） -->
+        <line x1="88" y1="133" x2="88" y2="148" stroke="#999" stroke-width="1.5"/>
+        <circle cx="88" cy="154" r="7" fill="#e84040"/>
+        <path d="M82,154 Q88,148 94,154" fill="none" stroke="#a02020" stroke-width="1.5"/>
+        <!-- 上段（赤カーペット） -->
+        <rect x="28" y="62" width="54" height="14" rx="7" fill="#7a5428"/>
+        <rect x="28" y="62" width="54" height="6"  rx="5" fill="#c84848"/>
+        <!-- ハウス -->
+        <rect x="20" y="8"  width="70" height="56" rx="8" fill="#7a5428"/>
+        <rect x="20" y="8"  width="70" height="8"  rx="5" fill="#c84848"/>
+        <!-- ハウスの穴 -->
+        <circle cx="55" cy="40" r="22" fill="#251508"/>
+        <!-- のぞく猫の目 -->
+        <circle cx="47" cy="35" r="4"   fill="#f0d020"/>
+        <circle cx="47" cy="35" r="2.2" fill="#1a1a1a"/>
+        <circle cx="46" cy="34" r="1"   fill="white"/>
+        <circle cx="63" cy="35" r="4"   fill="#f0d020"/>
+        <circle cx="63" cy="35" r="2.2" fill="#1a1a1a"/>
+        <circle cx="62" cy="34" r="1"   fill="white"/>
+      </svg>`;
+    }
+
+    // キャットタワー（小）
+    function svgTowerSmall() {
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 200" width="90" height="200">
+        <ellipse cx="45" cy="197" rx="42" ry="4" fill="rgba(0,40,0,0.3)"/>
+        <!-- 土台 -->
+        <rect x="4" y="182" width="82" height="16" rx="5" fill="#7a5428"/>
+        <rect x="4" y="182" width="82" height="7"  rx="4" fill="#4a9030"/>
+        <!-- ポール -->
+        <rect x="40" y="14" width="10" height="170" rx="4" fill="#d4b068"/>
+        <path d="M40,20 L50,20 M40,30 L50,30 M40,40 L50,40 M40,50 L50,50
+                 M40,60 L50,60 M40,70 L50,70 M40,80 L50,80 M40,90 L50,90
+                 M40,100 L50,100 M40,110 L50,110 M40,120 L50,120 M40,130 L50,130
+                 M40,140 L50,140 M40,150 L50,150 M40,160 L50,160 M40,170 L50,170"
+              stroke="#b89050" stroke-width="1.3"/>
+        <!-- 下段（緑） -->
+        <rect x="4" y="152" width="82" height="14" rx="7" fill="#7a5428"/>
+        <rect x="4" y="152" width="82" height="6"  rx="5" fill="#4a9030"/>
+        <!-- 上段（紫） -->
+        <rect x="14" y="80" width="62" height="14" rx="7" fill="#7a5428"/>
+        <rect x="14" y="80" width="62" height="6"  rx="5" fill="#9040b8"/>
+        <!-- 吊りおもちゃ（下段から） -->
+        <line x1="18" y1="165" x2="18" y2="178" stroke="#999" stroke-width="1.5"/>
+        <circle cx="18" cy="182" r="6" fill="#40a0e0"/>
+        <!-- 丸いてっぺんベッド -->
+        <ellipse cx="45" cy="46" rx="28" ry="18" fill="#7a5428"/>
+        <ellipse cx="45" cy="43" rx="22" ry="13" fill="#9040b8"/>
+        <ellipse cx="45" cy="45" rx="13" ry="8"  fill="#b060d8"/>
+      </svg>`;
+    }
+
+    // 爪とぎポスト
+    function svgScratchPost() {
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 135" width="72" height="135">
+        <ellipse cx="36" cy="132" rx="34" ry="4" fill="rgba(0,40,0,0.3)"/>
+        <!-- 土台 -->
+        <rect x="4" y="114" width="64" height="18" rx="5" fill="#7a5428"/>
+        <rect x="4" y="114" width="64" height="8"  rx="4" fill="#4a9030"/>
+        <!-- 麻縄ポスト -->
+        <rect x="29" y="22" width="14" height="93" rx="5" fill="#d4b068"/>
+        <path d="M29,28 L43,28 M29,36 L43,36 M29,44 L43,44 M29,52 L43,52
+                 M29,60 L43,60 M29,68 L43,68 M29,76 L43,76 M29,84 L43,84
+                 M29,92 L43,92 M29,100 L43,100 M29,108 L43,108"
+              stroke="#b89050" stroke-width="1.5"/>
+        <!-- てっぺんキャップ -->
+        <rect x="22" y="14" width="28" height="12" rx="5" fill="#7a5428"/>
+        <!-- 横向きのおもちゃ -->
+        <line x1="50" y1="18" x2="62" y2="10" stroke="#999" stroke-width="1.5"/>
+        <circle cx="65" cy="8" r="6"  fill="#f0c000"/>
+        <circle cx="65" cy="8" r="3.5" fill="#d09000"/>
+      </svg>`;
+    }
+
+    // 猫ベッド
+    function svgCatBed() {
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 88" width="140" height="88">
+        <ellipse cx="70" cy="85" rx="62" ry="5" fill="rgba(0,40,0,0.3)"/>
+        <!-- ベッド奥の壁 -->
+        <ellipse cx="70" cy="48" rx="62" ry="36" fill="#a05030"/>
+        <!-- ベッド手前の側面 -->
+        <path d="M8,60 Q8,80 70,80 Q132,80 132,60 L132,50 Q132,70 70,70 Q8,70 8,50 Z"
+              fill="#c87048"/>
+        <!-- 手前の縁 -->
+        <ellipse cx="70" cy="50" rx="62" ry="22" fill="#c87048"/>
+        <!-- 内側クッション -->
+        <ellipse cx="70" cy="48" rx="46" ry="16" fill="#f8c8a0"/>
+        <!-- クッション中央のくぼみ -->
+        <ellipse cx="70" cy="50" rx="28" ry="10" fill="#f0b080"/>
+        <!-- 肉球模様 -->
+        <circle cx="70" cy="50" r="6"   fill="#e8a070" opacity="0.55"/>
+        <circle cx="61" cy="43" r="3.5" fill="#e8a070" opacity="0.55"/>
+        <circle cx="70" cy="41" r="3.5" fill="#e8a070" opacity="0.55"/>
+        <circle cx="79" cy="43" r="3.5" fill="#e8a070" opacity="0.55"/>
+      </svg>`;
+    }
+
+    // ごはん皿・水皿
+    function svgBowls() {
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 70" width="128" height="70">
+        <!-- 水皿 -->
+        <ellipse cx="32" cy="67" rx="28" ry="4" fill="rgba(0,40,0,0.25)"/>
+        <path d="M6,58 L12,32 L52,32 L58,58 Z" fill="#b8b8b8"/>
+        <ellipse cx="32" cy="32" rx="20" ry="6" fill="#d0d0d0"/>
+        <ellipse cx="32" cy="30" rx="15" ry="4" fill="#70b8f0"/>
+        <ellipse cx="27" cy="28" rx="6"  ry="2" fill="rgba(255,255,255,0.55)"/>
+        <!-- 「水」ラベル -->
+        <text x="32" y="52" text-anchor="middle" font-size="11" font-family="sans-serif" fill="#888">水</text>
+
+        <!-- ごはん皿 -->
+        <ellipse cx="96" cy="67" rx="28" ry="4" fill="rgba(0,40,0,0.25)"/>
+        <path d="M70,58 L76,32 L116,32 L122,58 Z" fill="#b8b8b8"/>
+        <ellipse cx="96" cy="32" rx="20" ry="6" fill="#d0d0d0"/>
+        <ellipse cx="96" cy="30" rx="15" ry="4" fill="#c88038"/>
+        <!-- キャットフードつぶつぶ -->
+        <circle cx="91" cy="29" r="2.5" fill="#a06020"/>
+        <circle cx="97" cy="28" r="2.5" fill="#a06020"/>
+        <circle cx="93" cy="32" r="2.5" fill="#a06020"/>
+        <circle cx="99" cy="31" r="2.5" fill="#a06020"/>
+        <!-- 「ごはん」ラベル -->
+        <text x="96" y="52" text-anchor="middle" font-size="9" font-family="sans-serif" fill="#888">ごはん</text>
+      </svg>`;
+    }
+
+    // 家具を配置
+    function setupDecorations() {
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      const items = [
+        { html: svgTowerLarge(),  cx: 0.10, cy: 0.50, w: 110, h: 240 },
+        { html: svgTowerSmall(),  cx: 0.80, cy: 0.46, w: 90,  h: 200 },
+        { html: svgScratchPost(), cx: 0.52, cy: 0.73, w: 72,  h: 135 },
+        { html: svgCatBed(),      cx: 0.30, cy: 0.82, w: 140, h: 88  },
+        { html: svgBowls(),       cx: 0.67, cy: 0.84, w: 128, h: 70  },
+      ];
+      for (const item of items) {
+        const div = document.createElement('div');
+        div.className = 'decoration';
+        div.style.left = (W * item.cx - item.w / 2) + 'px';
+        div.style.top  = (H * item.cy - item.h / 2) + 'px';
+        div.innerHTML  = item.html;
+        document.body.insertBefore(div, document.getElementById('controls'));
+      }
+    }
+
+    /* ─── 起動 ────────────────────────────────────────── */
+    setupDecorations();
+    createCat();
+    loop();
+  </script>
+</body>
+</html>
